@@ -1,3 +1,6 @@
 dbt-core
 pandas
 numpy
+constants
+apache-airflow
+apache-airflow-providers-mongo

@@ -1,37 +1,52 @@
-import os
+import json
 
-import pendulum
-from airflow.decorators import dag
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.task_group import TaskGroup
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.providers.http.operators.http import SimpleHttpOperator
+from airflow.providers.mongo.hooks.mongo import MongoHook
+from datetime import datetime,timedelta
 
-from constants import DEFAULT_ENV_AS_TEST, ENV, TEST_ENV
-from operators.extract_operator import ExtractOperator
-from operators.load_operator import LoadOperator
-from operators.transform_operator import TransformOperator
-from utils.source_config.mongo import get_sources
-from constants import DEFAULT_
+def on_failure_callback(**context):
+    print(f"Task {context['task_instance_key_str']} failed.")
 
-DAG_ID = "etl_using_external_db"
+def uploadtomongo(ti, **context):
+    try:
+        hook = MongoHook(mongo_conn_id='mongoid')
+        client = hook.get_conn()
+        db = client.MyDB
+        currency_collection=db.currency_collection
+        print(f"Connected to MongoDB - {client.server_info()}")
+        d = json.loads(context["result"])
+        currency_collection.insert_one(d)
+    except Exception as e:
+        print(f"Error connection to MongoDB -- {e}")
 
-@dag(
-    dag_id=DAG_ID,
-    start_date=pendulum.now(tz="America/Guatemala"),
+with DAG(
+    dag_id="load_currency_data",
     schedule_interval=None,
-)
-def create_dag():
-    split_files_by_source = DummyOperator(task_id="split_files_by_source")
+    start_date=datetime(2023,11,1),
+    catchup=False,
+    tags=["currency"],
+    default_args={
+        "owner": "Rob",
+        "retries": 2,
+        "retry_delay": timedelta(minutes=5),
+        "on_failure_callback": on_failure_callback
+    }
+) as dag:
+    t1 = SimpleHttpOperator(
+        task_id="get_currency",
+        method='GET',
+        endpoint="2022-01-01..2023-11-30",
+        headers={"Content-Type": "application/json"},
+        do_xcom_push=True,
+        dag=dag)
+    
+    t2 = PythonOperator(
+        task_id="upload-mongodb",
+        python_callable=uploadtomongo,
+        op_kwargs={"result": t1.output},
+        dag=dag
+    )
 
-    sources = get_sources()
-
-    for source in sources:
-        with TaskGroup(group_id=source) as task_group:
-            extract = ExtractOperator(taks_id="extract", source=source)
-
-            transform = TransformOperator(task_id="transform", source=source)
-
-            load = LoadOperator(task_id="load", source=source)
-
-            extract >> transform >> load
-            
-        split_files_by_source >> task_group
+    t1 >> t2
