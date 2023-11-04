@@ -1,52 +1,41 @@
-import json
-
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.http.operators.http import SimpleHttpOperator
 from airflow.providers.mongo.hooks.mongo import MongoHook
-from datetime import datetime,timedelta
+from datetime import datetime
 
 def on_failure_callback(**context):
     print(f"Task {context['task_instance_key_str']} failed.")
 
-def uploadtomongo(ti, **context):
-    try:
-        hook = MongoHook(mongo_conn_id='mongoid')
-        client = hook.get_conn()
-        db = client.MyDB
-        currency_collection=db.currency_collection
-        print(f"Connected to MongoDB - {client.server_info()}")
-        d = json.loads(context["result"])
-        currency_collection.insert_one(d)
-    except Exception as e:
-        print(f"Error connection to MongoDB -- {e}")
+def connection():
+    hook = MongoHook(conn_id='mongo_conn')
+    client = hook.get_conn()
+    db = client['prod']
+    return db
+
+def get_data_mongo():
+    # collection: users
+    users_collection = connection().get_collection("users")
+    users = users_collection.find()
+
+    for user in users:
+        print(f"Users: {user}")
 
 with DAG(
-    dag_id="load_currency_data",
+    dag_id="load_clients_data",
     schedule_interval=None,
     start_date=datetime(2023,11,1),
-    catchup=False,
-    tags=["currency"],
+    tags=["reports"],
     default_args={
-        "owner": "Rob",
-        "retries": 2,
-        "retry_delay": timedelta(minutes=5),
+        "owner": "airflow",
         "on_failure_callback": on_failure_callback
     }
 ) as dag:
-    t1 = SimpleHttpOperator(
-        task_id="get_currency",
-        method='GET',
-        endpoint="2022-01-01..2023-11-30",
-        headers={"Content-Type": "application/json"},
-        do_xcom_push=True,
-        dag=dag)
-    
-    t2 = PythonOperator(
-        task_id="upload-mongodb",
-        python_callable=uploadtomongo,
-        op_kwargs={"result": t1.output},
+    t1 = PythonOperator(
+        task_id="get-clients",
+        python_callable=get_data_mongo,
+        op_kwargs={"result": "1"},
         dag=dag
     )
 
-    t1 >> t2
+    t1
+    #t1 >> t2
