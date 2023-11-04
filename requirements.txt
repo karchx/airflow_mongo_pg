@@ -4,3 +4,4 @@ numpy
 constants
 apache-airflow
 apache-airflow-providers-mongo
+apache-airflow-providers-postgres
