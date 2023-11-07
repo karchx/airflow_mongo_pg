@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.mongo.hooks.mongo import MongoHook
+from airflow.providers.postgres.operators.postgres import PostgresOperator
 from datetime import datetime
 import pandas as pd
 
@@ -29,12 +30,22 @@ def parse_insert_data():
         if 'userInformation' in user:
             user['userInformation'] = str(user['userInformation'])
 
-    df = pd.DataFrame(list(user_data))
+    columns = ['_id', 'userInformation', 'username', 'name', 'email', 'email']
+    df = pd.DataFrame(list(user_data), columns=columns)
 
-    df.rename(columns={"_id": "_id", "userInformation": "userInformation", "username": "username", "name": "name", "lastname": "lastname", "email": "email"}, inplace=True)
+    parameters = [tuple(row) for row in df.values]
+    return parameters
 
-    print(f"Data frame: {df}")
+def insert_data_into_pg(**context):
+    ti = context['task_instance']
+    data_file = ti.xcom_pull(key='data_file')
 
+    df = pd.read_csv(data_file)
+    #sql = f"INSERT INTO users (_id, userInformation, username, name, lastname, email) VALUES ({', '.join(['%s'] * len(df.columns))})"
+    parameters=[tuple(row) for row in df.values]
+
+    return parameters
+     
 with DAG(
     dag_id="dag_load_data_mongo_v01",
     schedule_interval=None,
@@ -45,11 +56,22 @@ with DAG(
         "on_failure_callback": on_failure_callback
     }
 ) as dag:
-    t1 = PythonOperator(
-        task_id="parse_insert_data",
-        python_callable=parse_insert_data,
-        #op_kwargs={"result": "1"},
-        dag=dag
+
+    #t1 = PythonOperator(
+    #      task_id="parset_Data",
+    #      python_callable=parse_insert_data,
+    #      dag=dag
+    #    )
+    parameters = parse_insert_data()
+
+    t1 = PostgresOperator(
+         task_id="insert_data_into_pg",
+         sql="""
+             INSERT INTO users (_id, userInformation, username, name, lastname, email) 
+             VALUES (%s, %s, %s, %s, %s, %s)
+         """,
+         postgres_conn_id = 'warehouse_pg',
+         parameters=parameters
     )
 
     t1
