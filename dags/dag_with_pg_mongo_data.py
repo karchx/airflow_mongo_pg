@@ -2,6 +2,7 @@ from airflow import DAG
 from airflow.providers.mongo.hooks.mongo import MongoHook
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from sqlalchemy import create_engine 
 from airflow.operators.python import PythonOperator
 from datetime import datetime,timedelta
 import pandas as pd
@@ -39,13 +40,14 @@ def parse_insert_data():
 
     df.to_csv('/tmp/users.csv', index=False)
 
-def migrate_data(path: str, db_table: str):
+def migrate_data(path, db_table):
     pg_hook = PostgresHook(postgres_conn_id=postgres_conn_id)
-    engine = pg_hook.get_conn()
-    df = pd.read_csv(path, sep="[,;:]", index_col=False)
+    engine = create_engine(pg_hook.get_sqlalchemy_engine())
+    #engine = create_engine("postgresql://airflow:airflow@postgres:5432/test", echo=True, future=True)
+    df = pd.read_csv(path, index_col=False)
 
     print("<<<<<<<START MIGRATION>>>>>>>")
-    df.to_sql(db_table, con=engine, if_exists='replace', index_label='id')
+    df.to_sql(db_table, con=engine, if_exists='replace')
     print("<<<<<<<COMPLETE>>>>>>>")
 
 
