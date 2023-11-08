@@ -33,17 +33,15 @@ def parse_insert_data():
         else:
             user['userInformation'] = '' 
 
-    columns = ['_id', 'userInformation', 'username', 'name', 'email', 'email']
+    columns = ['_id', 'userInformation', 'username', 'name', 'email', 'lastname']
     df = pd.DataFrame(list(user_data), columns=columns)
-
-    # parameters = [tuple(row) for row in df.values]
+    df.rename(columns={"_id": "_id", "user_information": "userInformation", "username": "username", "name": "name", "email": "email", "lastname": "lastname"})
 
     df.to_csv('/tmp/users.csv', index=False)
 
 def migrate_data(path, db_table):
     pg_hook = PostgresHook(postgres_conn_id=postgres_conn_id)
     engine = create_engine(pg_hook.get_sqlalchemy_engine())
-    #engine = create_engine("postgresql://airflow:airflow@postgres:5432/test", echo=True, future=True)
     df = pd.read_csv(path, index_col=False)
 
     print("<<<<<<<START MIGRATION>>>>>>>")
@@ -74,12 +72,12 @@ with DAG(
             sql="""
                 CREATE TABLE IF NOT EXISTS users(
                   _id VARCHAR,
-                  userInformation VARCHAR,
+                  user_information VARCHAR,
                   username VARCHAR(20),
                   name VARCHAR(50),
                   lastname VARCHAR(50),
                   email VARCHAR(100),
-                  primary key (_id, userInformation)
+                  primary key (_id, user_information)
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS username_idx ON users (username);
                 CREATE UNIQUE INDEX IF NOT EXISTS email_idx ON users (email);
